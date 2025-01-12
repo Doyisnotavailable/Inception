@@ -1,46 +1,62 @@
-#!/bin/sh
+#!/bin/bash
+set -e
 
-# Ensure necessary environment variables are set
-if [ -z "$MYSQL_DATABASE" ] || [ -z "$MYSQL_ROOT_PASSWORD" ] || [ -z "$MYSQL_USER" ] || [ -z "$MYSQL_PASSWORD" ]; then
-  echo "Required environment variables are missing. Exiting."
-  exit 1
+# Initialize the MySQL data directory if needed
+if [ ! -d "/var/lib/mysql/mysql" ]; then
+    mysql_install_db --user=mysql --datadir=/var/lib/mysql
 fi
 
-# Initialize MySQL database
-mysql_install_db
+# Start MySQL server in the background for initialization
+mysqld --user=mysql --skip-networking &
+pid="$!"
 
-/etc/init.d/mysql start
+# Wait for MySQL to start
+until mysqladmin ping >/dev/null 2>&1; do
+    echo -n "."
+    sleep 1
+done
 
-# Check if the database exists
-if [ -d "/var/lib/mysql/$MYSQL_DATABASE" ]; then
-  echo "Database already exists"
+# Initialize database if it doesn't exist
+if [ ! -d "/var/lib/mysql/$MYSQL_DATABASE" ]; then
+    # First, set up root without password temporarily
+    mysql --user=mysql <<-EOSQL
+        USE mysql;
+        FLUSH PRIVILEGES;
+        -- Set root password and privileges
+        SET PASSWORD FOR 'root'@'localhost' = PASSWORD('${MYSQL_ROOT_PASSWORD}');
+        GRANT ALL ON *.* TO 'root'@'localhost' WITH GRANT OPTION;
+        FLUSH PRIVILEGES;
+EOSQL
+
+    # Now use root with password for remaining setup
+    mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" <<-EOSQL
+        -- Remove anonymous users
+        DELETE FROM mysql.user WHERE User='';
+        -- Create database and user
+        CREATE DATABASE IF NOT EXISTS \`$MYSQL_DATABASE\`;
+        CREATE USER '$MYSQL_USER'@'%' IDENTIFIED BY '$MYSQL_PASSWORD';
+        GRANT ALL ON \`$MYSQL_DATABASE\`.* TO '$MYSQL_USER'@'%';
+        -- Remove test database
+        DROP DATABASE IF EXISTS test;
+        DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';
+        FLUSH PRIVILEGES;
+EOSQL
+
+    # Import WordPress database if SQL file exists
+    if [ -f /usr/local/bin/wordpress.sql ]; then
+        mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" "$MYSQL_DATABASE" < /usr/local/bin/wordpress.sql
+    fi
+fi
+
+# Stop the temporary server
+if ! kill -s TERM "$pid" || ! wait "$pid"; then
+    echo >&2 'MySQL initialization process failed.'
+    exit 1
+fi
+
+# Start MySQL with the provided arguments
+if [ "${1}" = 'mysqld' ]; then
+    exec mysqld --user=mysql --bind-address=0.0.0.0
 else
-  # Secure MySQL by configuring root password and removing test database
-  mysql -uroot <<_EOF_
-    UPDATE mysql.user SET Password=PASSWORD('$MYSQL_ROOT_PASSWORD') WHERE User='root';
-    DELETE FROM mysql.user WHERE User='';
-    UPDATE mysql.user SET Host='localhost' WHERE User='root';
-    DROP DATABASE IF EXISTS test;
-    DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';
-    FLUSH PRIVILEGES;
-_EOF_
-
-  # Add a root user for remote connections
-  echo "GRANT ALL ON *.* TO 'root'@'%' IDENTIFIED BY '$MYSQL_ROOT_PASSWORD'; FLUSH PRIVILEGES;" | mysql -uroot
-
-  # Create the WordPress database and user
-  echo "CREATE DATABASE IF NOT EXISTS $MYSQL_DATABASE; GRANT ALL ON $MYSQL_DATABASE.* TO '$MYSQL_USER'@'%' IDENTIFIED BY '$MYSQL_PASSWORD'; FLUSH PRIVILEGES;" | mysql -u root
-
-  # Import the database from the SQL file if it exists
-  if [ -f /usr/local/bin/wordpress.sql ]; then
-    mysql -uroot -p$MYSQL_ROOT_PASSWORD $MYSQL_DATABASE < /usr/local/bin/wordpress.sql
-  else
-    echo "WordPress SQL file not found. Skipping import."
-  fi
+    exec "$@"
 fi
-
-# Stop MySQL after setup
-/etc/init.d/mysql stop
-
-# Execute any additional command passed to the container/script
-exec "$@"

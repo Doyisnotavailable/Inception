@@ -1,31 +1,31 @@
-FROM debian:stable
+FROM debian:11
 
 # Install MariaDB
-RUN apt update -y && \
-    apt upgrade -y && \
-    apt install -y mariadb-server mariadb-client && \
-    apt clean && \
-    rm -rf /var/lib/apt/lists/* && \
-    mkdir -p /var/run/mysqld && \
-    mkdir -p /var/lib/mysql && \
-    chown -R mysql:mysql /var/run/mysqld && \
-    chown -R mysql:mysql /var/lib/mysql
+RUN apt-get update -y && \
+    apt-get install -y mariadb-server mariadb-client && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
+# Create necessary directories and set permissions
+RUN mkdir -p /var/run/mysqld /var/lib/mysql && \
+    chown -R mysql:mysql /var/run/mysqld /var/lib/mysql /etc/mysql/
 
+# Copy initialization script
+COPY ./tools/mdbscript.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 
-COPY ./tools/mdbscript.sh /usr/local/bin
-RUN chmod +x /usr/local/bin/mdbscript.sh
+# Set environment variables with defaults
+ENV MYSQL_DATABASE=$MYSQL_DATABASE \
+    MYSQL_USER=$MYSQL_USER \
+    MYSQL_PASSWORD=$MYSQL_PASSWORD \
+    MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD
 
-# Use the default entrypoint from the official MariaDB image to start MariaDB
+# Expose MariaDB port
+EXPOSE 3306
+
+# Switch to mysql user for security
 USER mysql
 
-EXPOSE 3306
-ENTRYPOINT [ "/usr/local/bin/mdbscript.sh" ]
+ENTRYPOINT ["/docker-entrypoint.sh"]
 
 CMD ["mysqld", "--bind-address=0.0.0.0"]
-# RUN mysql -u root -p rootpassword
-# CMD ["mysqld", "-g", "daemon off"]
-
-
-# Start MariaDB when the container runs
-# CMD ["mysqld", "-g", "daemon off;"]

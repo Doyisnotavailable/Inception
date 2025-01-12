@@ -41,4 +41,7 @@ exec:
 	docker-compose -f $(DC_FILE) exec $(service) $(command)
 
 fclean: down
-	@docker rmi $(DB) $(WP) $(NG)
+	@yes | docker system prune --all
+	@docker volume ls -q | grep -q . && docker volume rm $$(docker volume ls -q) || true 
+
+rebuild: fclean all
