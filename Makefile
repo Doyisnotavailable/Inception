@@ -5,8 +5,11 @@ WP=srcs-wordpress
 NG=srcs-nginx
 
 all: build up
+
 # Build the containers defined in docker-compose.yml
 build:
+	mkdir -p /home/mlumibao/data/wordpress
+	mkdir -p /home/mlumibao/data/mysql
 	docker-compose -f $(DC_FILE) build
 
 # Start the containers in detached mode

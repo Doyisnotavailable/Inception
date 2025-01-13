@@ -28,11 +28,10 @@ services:
     build:
       context: requirements/nginx
     ports: 
-      - 80:80
-      # - 443:443
+      - 443:443
     volumes: 
       - wp:/var/www/html
-    # restart: always
+    restart: on-failure
     networks: 
       - inception_net
     depends_on:
@@ -42,16 +41,16 @@ services:
 volumes:
   mdb:
     driver: local
-    # driver_opts:
-    #   type: none
-      # device: /home/mlumibao/data/mysql
-      # o: bind
+    driver_opts:
+      type: none
+      device: /home/mlumibao/data/mysql
+      o: bind
   wp:
     driver: local
-    # driver_opts:
-    #   type: none
-    #   device: /home/mlumibao/data/wordpress
-    #   o: bind
+    driver_opts:
+      type: none
+      device: /home/mlumibao/data/wordpress
+      o: bind
 
 networks:
     inception_net:

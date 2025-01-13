@@ -18,6 +18,7 @@ COPY tools/nginx.conf /etc/nginx/nginx.conf
 RUN mkdir -p /run/nginx
 
 # Expose port 443
+# EXPOSE 80
 EXPOSE 443
 
 # Start Nginx when the container runs
